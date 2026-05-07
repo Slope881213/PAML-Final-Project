@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="426" height="386" viewBox="0 0 426 386">
+<rect width="100%" height="100%" fill="white"/>
+<text x="245" y="24" font-family="Arial" font-size="16" text-anchor="middle">Predicted label</text>
+<text x="18" y="230" font-family="Arial" font-size="16" transform="rotate(-90 18 230)" text-anchor="middle">True label</text>
+<text x="166.0" y="54" font-family="Arial" font-size="12" text-anchor="middle">Undrafted</text>
+<text x="105" y="120.0" font-family="Arial" font-size="12" text-anchor="end">Undrafted</text>
+<text x="258.0" y="54" font-family="Arial" font-size="12" text-anchor="middle">1st Round</text>
+<text x="105" y="212.0" font-family="Arial" font-size="12" text-anchor="end">1st Round</text>
+<text x="350.0" y="54" font-family="Arial" font-size="12" text-anchor="middle">2nd Round</text>
+<text x="105" y="304.0" font-family="Arial" font-size="12" text-anchor="end">2nd Round</text>
+<rect x="120" y="70" width="92" height="92" fill="rgb(63,63,255)" stroke="#333"/>
+<text x="166.0" y="121.0" font-family="Arial" font-size="16" text-anchor="middle">3443</text>
+<rect x="212" y="70" width="92" height="92" fill="rgb(252,252,255)" stroke="#333"/>
+<text x="258.0" y="121.0" font-family="Arial" font-size="16" text-anchor="middle">39</text>
+<rect x="304" y="70" width="92" height="92" fill="rgb(251,251,255)" stroke="#333"/>
+<text x="350.0" y="121.0" font-family="Arial" font-size="16" text-anchor="middle">66</text>
+<rect x="120" y="162" width="92" height="92" fill="rgb(254,254,255)" stroke="#333"/>
+<text x="166.0" y="213.0" font-family="Arial" font-size="16" text-anchor="middle">6</text>
+<rect x="212" y="162" width="92" height="92" fill="rgb(253,253,255)" stroke="#333"/>
+<text x="258.0" y="213.0" font-family="Arial" font-size="16" text-anchor="middle">30</text>
+<rect x="304" y="162" width="92" height="92" fill="rgb(254,254,255)" stroke="#333"/>
+<text x="350.0" y="213.0" font-family="Arial" font-size="16" text-anchor="middle">12</text>
+<rect x="120" y="254" width="92" height="92" fill="rgb(254,254,255)" stroke="#333"/>
+<text x="166.0" y="305.0" font-family="Arial" font-size="16" text-anchor="middle">15</text>
+<rect x="212" y="254" width="92" height="92" fill="rgb(253,253,255)" stroke="#333"/>
+<text x="258.0" y="305.0" font-family="Arial" font-size="16" text-anchor="middle">21</text>
+<rect x="304" y="254" width="92" height="92" fill="rgb(254,254,255)" stroke="#333"/>
+<text x="350.0" y="305.0" font-family="Arial" font-size="16" text-anchor="middle">11</text>
+</svg>

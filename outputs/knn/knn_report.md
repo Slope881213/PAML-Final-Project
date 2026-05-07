@@ -8,6 +8,8 @@
 - Encoded categorical columns: `team, conf, role`.
 - Numeric columns scaled with train-only z-score statistics after train-median imputation.
 - KNN implementation: direct NumPy distance computation, weighted neighbor voting, validation-selected `k`, and train-derived feature weighting.
+- Active weighted features: `460` of `460`.
+- Final prediction strategy: `argmax`.
 
 ## Selected Hyperparameters
 
@@ -17,9 +19,18 @@
   "metric": "euclidean",
   "p": 2.0,
   "weight_mode": "distance",
-  "class_weight_mode": "balanced",
-  "custom_class_weights": {},
-  "feature_weight_mode": "anova_f",
+  "class_weight_mode": "custom",
+  "custom_class_weights": {
+    "0": 1.0,
+    "1": 20.0,
+    "2": 20.0
+  },
+  "feature_weight_mode": "none",
+  "feature_weight_min": 0.25,
+  "feature_weight_max": 4.0,
+  "feature_top_n": 0,
+  "active_feature_count": 460,
+  "prediction_strategy": "argmax",
   "k_values": [
     1,
     3,
@@ -37,22 +48,22 @@ Best validation `k`: `3`
 
 ## Validation Metrics
 
-- Multiclass accuracy: `0.9577`
-- Multiclass macro-F1: `0.5317`
-- Multiclass macro one-vs-rest AUROC: `0.7663`
-- Binary drafted-any F1 at tuned threshold `0.9669`: `0.5251`
-- Binary drafted-any recall at tuned threshold `0.9669`: `0.7158`
-- Binary drafted-any AUROC: `0.8474`
+- Multiclass accuracy: `0.9564`
+- Multiclass macro-F1: `0.5262`
+- Multiclass macro one-vs-rest AUROC: `0.7862`
+- Binary drafted-any F1 at tuned threshold `0.9109`: `0.5641`
+- Binary drafted-any recall at tuned threshold `0.9109`: `0.5789`
+- Binary drafted-any AUROC: `0.8795`
 
 ## Test Metrics
 
-- Multiclass accuracy: `0.9715`
-- Multiclass macro-F1: `0.4507`
-- Multiclass macro one-vs-rest AUROC: `0.7136`
-- Binary drafted-any F1 at validation-tuned threshold `0.9669`: `0.2889`
-- Binary drafted-any precision at validation-tuned threshold `0.9669`: `0.2000`
-- Binary drafted-any recall at validation-tuned threshold `0.9669`: `0.5200`
-- Binary drafted-any AUROC: `0.7598`
+- Multiclass accuracy: `0.9681`
+- Multiclass macro-F1: `0.4741`
+- Multiclass macro one-vs-rest AUROC: `0.7220`
+- Binary drafted-any F1 at validation-tuned threshold `0.9109`: `0.3143`
+- Binary drafted-any precision at validation-tuned threshold `0.9109`: `0.2444`
+- Binary drafted-any recall at validation-tuned threshold `0.9109`: `0.4400`
+- Binary drafted-any AUROC: `0.7690`
 
 ## Rubric Check
 

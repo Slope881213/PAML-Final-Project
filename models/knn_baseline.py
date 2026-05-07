@@ -32,7 +32,7 @@ class TabularPreprocessor:
         self.numeric_columns = frame.select_dtypes(include=[np.number]).columns.tolist()
         self.categorical_columns = [col for col in frame.columns if col not in self.numeric_columns]
 
-        numeric_frame = frame[self.numeric_columns].copy()
+        numeric_frame = frame[self.numeric_columns].copy().replace([np.inf, -np.inf], np.nan)
         self.numeric_medians = numeric_frame.median()
         numeric_frame = numeric_frame.fillna(self.numeric_medians)
         self.numeric_means = numeric_frame.mean()
@@ -47,7 +47,7 @@ class TabularPreprocessor:
         if self.numeric_columns is None or self.categorical_columns is None:
             raise ValueError("Preprocessor must be fit before calling transform.")
 
-        numeric_frame = frame[self.numeric_columns].copy().fillna(self.numeric_medians)
+        numeric_frame = frame[self.numeric_columns].copy().replace([np.inf, -np.inf], np.nan).fillna(self.numeric_medians)
         numeric_scaled = (numeric_frame - self.numeric_means) / self.numeric_stds
 
         categorical_frame = frame[self.categorical_columns].copy().fillna("Missing").astype(str)
@@ -135,7 +135,9 @@ class HandwrittenKNN:
         for start in range(0, len(X_query), batch_size):
             batch = X_query[start : start + batch_size]
             batch_squared_norms = np.sum(batch ** 2, axis=1, keepdims=True)
-            squared_distances = batch_squared_norms + train_squared_norms - 2.0 * batch @ self.X_train.T
+            with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                squared_distances = batch_squared_norms + train_squared_norms - 2.0 * batch @ self.X_train.T
+            squared_distances = np.nan_to_num(squared_distances, nan=np.inf, posinf=np.inf, neginf=0.0)
             squared_distances = np.maximum(squared_distances, 0.0)
 
             batch_top_k_unsorted = np.argpartition(squared_distances, num_neighbors - 1, axis=1)[:, :num_neighbors]
@@ -514,6 +516,7 @@ def compute_feature_weights(
     mode: str = "none",
     min_weight: float = 0.25,
     max_weight: float = 4.0,
+    top_n: int | None = None,
 ) -> np.ndarray:
     labels_np = train_labels.to_numpy() if hasattr(train_labels, "to_numpy") else np.asarray(train_labels)
 
@@ -541,6 +544,21 @@ def compute_feature_weights(
     if np.allclose(raw_weights.max(), raw_weights.min()):
         return np.ones_like(raw_weights, dtype=float)
 
+    if top_n is not None and top_n > 0 and top_n < len(raw_weights):
+        selected_indices = np.argsort(raw_weights)[-top_n:]
+        selected_raw_weights = raw_weights[selected_indices]
+        output_weights = np.zeros_like(raw_weights, dtype=float)
+
+        if np.allclose(selected_raw_weights.max(), selected_raw_weights.min()):
+            output_weights[selected_indices] = max_weight
+        else:
+            selected_normalized = (
+                (selected_raw_weights - selected_raw_weights.min())
+                / (selected_raw_weights.max() - selected_raw_weights.min() + 1e-12)
+            )
+            output_weights[selected_indices] = min_weight + selected_normalized * (max_weight - min_weight)
+        return output_weights
+
     normalized = (raw_weights - raw_weights.min()) / (raw_weights.max() - raw_weights.min() + 1e-12)
     return min_weight + normalized * (max_weight - min_weight)
 
@@ -551,6 +569,16 @@ def apply_feature_weights(features: np.ndarray, feature_weights: np.ndarray, met
     else:
         scale = feature_weights
     return features * scale
+
+
+def predict_with_strategy(scores: np.ndarray, threshold: float, strategy: str) -> np.ndarray:
+    if strategy == "argmax":
+        return np.argmax(scores, axis=1)
+    if strategy == "thresholded":
+        drafted_scores = scores[:, 1] + scores[:, 2]
+        drafted_rounds = np.argmax(scores[:, 1:3], axis=1) + 1
+        return np.where(drafted_scores >= threshold, drafted_rounds, 0)
+    raise ValueError("Supported prediction strategies are: argmax, thresholded")
 
 
 def print_split_report(name: str, y_true: pd.Series, y_pred: np.ndarray) -> None:
@@ -628,6 +656,30 @@ def parse_args() -> argparse.Namespace:
         choices=["none", "pearson", "anova_f"],
         help="Learn per-feature weights from the training split and fold them into the distance calculation.",
     )
+    parser.add_argument(
+        "--feature-weight-min",
+        type=float,
+        default=0.25,
+        help="Minimum nonzero learned feature weight before applying top-N feature selection.",
+    )
+    parser.add_argument(
+        "--feature-weight-max",
+        type=float,
+        default=4.0,
+        help="Maximum learned feature weight.",
+    )
+    parser.add_argument(
+        "--feature-top-n",
+        type=int,
+        default=0,
+        help="Keep only the top N learned features and set all other feature weights to 0. Use 0 to keep all features.",
+    )
+    parser.add_argument(
+        "--prediction-strategy",
+        default="argmax",
+        choices=["argmax", "thresholded"],
+        help="Use plain multiclass argmax or the validation-tuned drafted-any threshold for final y_pred.",
+    )
     parser.add_argument("--output-dir", default="outputs/knn", help="Directory for KNN result artifacts.")
     return parser.parse_args()
 
@@ -661,6 +713,11 @@ def write_predictions(
         {
             "player_name": frame["player_name"],
             "year": frame["year"],
+            "y": np.asarray(y_true),
+            "y_prob_0": scores[:, 0],
+            "y_prob_1": scores[:, 1],
+            "y_prob_2": scores[:, 2],
+            "y_pred": predictions,
             "true_draft_status": np.asarray(y_true),
             "pred_draft_status": predictions,
             "pred_label": [CLASS_NAMES[int(label)] for label in predictions],
@@ -672,6 +729,81 @@ def write_predictions(
         }
     )
     output.to_csv(path, index=False)
+
+
+def write_confusion_matrix_artifacts(path_prefix: Path, matrix: list[list[int]]) -> None:
+    labels = [0, 1, 2]
+    matrix_df = pd.DataFrame(matrix, index=[f"true_{label}" for label in labels], columns=[f"pred_{label}" for label in labels])
+    matrix_df.to_csv(path_prefix.with_suffix(".csv"))
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        write_confusion_matrix_svg(path_prefix.with_suffix(".svg"), matrix_df)
+        return
+
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
+    image = ax.imshow(matrix_df.to_numpy(), cmap="Blues")
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_xticks(range(len(labels)), labels=[CLASS_NAMES[label] for label in labels], rotation=20, ha="right")
+    ax.set_yticks(range(len(labels)), labels=[CLASS_NAMES[label] for label in labels])
+    ax.set_xlabel("Predicted label")
+    ax.set_ylabel("True label")
+
+    for row_index in range(len(labels)):
+        for column_index in range(len(labels)):
+            ax.text(
+                column_index,
+                row_index,
+                int(matrix_df.iloc[row_index, column_index]),
+                ha="center",
+                va="center",
+                color="black",
+            )
+
+    fig.tight_layout()
+    fig.savefig(path_prefix.with_suffix(".png"), dpi=160)
+    plt.close(fig)
+
+
+def write_confusion_matrix_svg(path: Path, matrix_df: pd.DataFrame) -> None:
+    labels = [CLASS_NAMES[label] for label in [0, 1, 2]]
+    values = matrix_df.to_numpy()
+    max_value = max(int(values.max()), 1)
+    cell_size = 92
+    left_margin = 120
+    top_margin = 70
+    width = left_margin + cell_size * 3 + 30
+    height = top_margin + cell_size * 3 + 40
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        '<text x="245" y="24" font-family="Arial" font-size="16" text-anchor="middle">Predicted label</text>',
+        '<text x="18" y="230" font-family="Arial" font-size="16" transform="rotate(-90 18 230)" text-anchor="middle">True label</text>',
+    ]
+
+    for index, label in enumerate(labels):
+        x = left_margin + index * cell_size + cell_size / 2
+        y = top_margin + index * cell_size + cell_size / 2
+        lines.append(f'<text x="{x}" y="54" font-family="Arial" font-size="12" text-anchor="middle">{label}</text>')
+        lines.append(f'<text x="105" y="{y + 4}" font-family="Arial" font-size="12" text-anchor="end">{label}</text>')
+
+    for row_index in range(3):
+        for column_index in range(3):
+            value = int(values[row_index, column_index])
+            intensity = 1.0 - (value / max_value) * 0.75
+            blue = int(255 * intensity)
+            fill = f"rgb({blue},{blue},{255})"
+            x = left_margin + column_index * cell_size
+            y = top_margin + row_index * cell_size
+            lines.append(f'<rect x="{x}" y="{y}" width="{cell_size}" height="{cell_size}" fill="{fill}" stroke="#333"/>')
+            lines.append(
+                f'<text x="{x + cell_size / 2}" y="{y + cell_size / 2 + 5}" '
+                f'font-family="Arial" font-size="16" text-anchor="middle">{value}</text>'
+            )
+
+    lines.append("</svg>")
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def write_report(path: Path, results: dict[str, Any]) -> None:
@@ -690,6 +822,8 @@ def write_report(path: Path, results: dict[str, Any]) -> None:
 - Encoded categorical columns: `{", ".join(results["preprocessing"]["categorical_cols"])}`.
 - Numeric columns scaled with train-only z-score statistics after train-median imputation.
 - KNN implementation: direct NumPy distance computation, weighted neighbor voting, validation-selected `k`, and train-derived feature weighting.
+- Active weighted features: `{hyperparameters["active_feature_count"]}` of `{results["data"]["input_dim"]}`.
+- Final prediction strategy: `{hyperparameters["prediction_strategy"]}`.
 
 ## Selected Hyperparameters
 
@@ -752,6 +886,9 @@ def main() -> None:
         train_features=X_train,
         train_labels=y_train,
         mode=args.feature_weight_mode,
+        min_weight=args.feature_weight_min,
+        max_weight=args.feature_weight_max,
+        top_n=args.feature_top_n if args.feature_top_n > 0 else None,
     )
     X_train = apply_feature_weights(X_train, feature_weights, args.metric)
     X_val = apply_feature_weights(X_val, feature_weights, args.metric)
@@ -794,16 +931,16 @@ def main() -> None:
 
     val_neighbor_indices, val_neighbor_distances = best_model.kneighbors(X_val, best_k)
     val_scores = best_model.predict_scores_from_neighbors(val_neighbor_indices, val_neighbor_distances, best_k)
-    val_predictions = np.argmax(val_scores, axis=1)
     threshold_result = tune_binary_threshold(y_val, val_scores[:, 1] + val_scores[:, 2])
+    threshold = float(threshold_result["threshold"])
+    val_predictions = predict_with_strategy(val_scores, threshold, args.prediction_strategy)
     print_split_report("Validation", y_val, val_predictions)
 
     test_neighbor_indices, test_neighbor_distances = best_model.kneighbors(X_test, best_k)
     test_scores = best_model.predict_scores_from_neighbors(test_neighbor_indices, test_neighbor_distances, best_k)
-    test_predictions = np.argmax(test_scores, axis=1)
+    test_predictions = predict_with_strategy(test_scores, threshold, args.prediction_strategy)
     print_split_report("Test", y_test, test_predictions)
 
-    threshold = float(threshold_result["threshold"])
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -815,6 +952,11 @@ def main() -> None:
         "class_weight_mode": args.class_weight_mode,
         "custom_class_weights": custom_class_weights,
         "feature_weight_mode": args.feature_weight_mode,
+        "feature_weight_min": args.feature_weight_min,
+        "feature_weight_max": args.feature_weight_max,
+        "feature_top_n": args.feature_top_n,
+        "active_feature_count": int(np.count_nonzero(feature_weights)),
+        "prediction_strategy": args.prediction_strategy,
         "k_values": args.k_values,
     }
     results = {
@@ -858,6 +1000,14 @@ def main() -> None:
     (output_dir / "knn_preprocessing.json").write_text(json.dumps(results["preprocessing"], indent=2), encoding="utf-8")
     write_predictions(output_dir / "knn_predictions_validation.csv", val_frame, y_val, val_predictions, val_scores, threshold)
     write_predictions(output_dir / "knn_predictions_test.csv", test_frame, y_test, test_predictions, test_scores, threshold)
+    write_confusion_matrix_artifacts(
+        output_dir / "knn_confusion_matrix_validation",
+        results["validation_metrics"]["confusion_matrix"],
+    )
+    write_confusion_matrix_artifacts(
+        output_dir / "knn_confusion_matrix_test",
+        results["test_metrics"]["confusion_matrix"],
+    )
     write_report(output_dir / "knn_report.md", results)
     print(f"\nSaved KNN artifacts to {output_dir}")
 
