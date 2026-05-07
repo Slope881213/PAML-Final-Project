@@ -851,17 +851,6 @@ Best validation `k`: `{hyperparameters["k"]}`
 - Binary drafted-any precision at validation-tuned threshold `{threshold:.4f}`: `{test_metrics["binary_drafted"]["precision"]:.4f}`
 - Binary drafted-any recall at validation-tuned threshold `{threshold:.4f}`: `{test_metrics["binary_drafted"]["recall"]:.4f}`
 - Binary drafted-any AUROC: `{test_metrics["binary_drafted"]["auc"]:.4f}`
-
-## Rubric Check
-
-- Two or more ML algorithms: this file completes the KNN portion alongside the MLP outputs.
-- No high-level ML library: satisfied for KNN. The script uses NumPy/Pandas only, not scikit-learn, TensorFlow, PyTorch, or XGBoost.
-- Inputs/outputs stated: satisfied. Inputs are processed NCAA player statistics; outputs are distance-weighted vote scores for undrafted, first round, and second round, plus a drafted-any score.
-- Three or more metrics: satisfied. Accuracy, precision, recall, F1, confusion matrices, balanced accuracy, and AUROC are written to `knn_results.json`.
-- Train/validation/test procedure: satisfied. The provided time-aware splits are used, validation chooses `k` and the binary threshold, and test is used once for final reporting.
-- Overfitting controls: KNN has no gradient-training loop, but model selection is restricted to validation and uses a simple neighbor-count sweep.
-- Class imbalance handling: partially satisfied. Balanced class vote weights and macro metrics emphasize the rare drafted classes, but test drafted support remains extremely small.
-- Streamlit deployment readiness: satisfied for handoff. The script saves the processed training matrix, labels, feature weights, preprocessing metadata, and selected hyperparameters; `models/knn_inference.py` can load those artifacts for app predictions.
 """
     path.write_text(report, encoding="utf-8")
 
