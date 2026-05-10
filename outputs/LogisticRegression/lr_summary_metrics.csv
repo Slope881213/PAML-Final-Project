@@ -1,0 +1,2 @@
+best_params,validation_accuracy,validation_macro_precision,validation_macro_recall,validation_macro_f1,test_accuracy,test_macro_precision,test_macro_recall,test_macro_f1
+"{'lr': 0.005, 'reg_lambda': 0.01, 'batch_size': 128, 'epochs': 150, 'use_class_weights': True, 'class_weight_multiplier_1': 1.0, 'class_weight_multiplier_2': 1.0, 'best_epoch': 148}",0.9302772440296458,0.4888150751734406,0.7670758473458129,0.5520940765677415,0.9330104923325262,0.3889987686213219,0.6447394782596443,0.41699015416207524
