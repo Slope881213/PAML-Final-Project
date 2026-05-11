@@ -7,45 +7,54 @@
 - Dropped identifier/leakage-risk columns: `player_name`, `pid`, `year`.
 - Encoded categorical columns: `team, conf, role`.
 - Numeric columns scaled with train-only z-score statistics.
-- Team encoding: top `40` train teams plus `__OTHER__`.
-- MLP implementation: one hidden layer, direct NumPy forward pass and backpropagation, weighted cross-entropy, L2 regularization, mini-batch gradient descent, and early stopping.
+- Team encoding: all train-seen teams plus `__OTHER__`.
+- Feature selection: `463` of `463` encoded features retained using train-only drafted-vs-undrafted signal (`0` means no pruning).
+- MLP implementation: from-scratch one-hidden-layer NumPy networks with direct forward pass/backpropagation, weighted cross-entropy or focal loss, L2 regularization, SGD/Adam updates, and early stopping.
+- Model form selected on validation: `single`.
+- Validation score used for model selection: `0.65 * macro-F1 + 0.35 * binary drafted F1`.
 
 ## Selected Hyperparameters
 
 ```json
 {
-  "hidden_dim": 16,
-  "learning_rate": 0.01,
+  "hidden_dim": 64,
+  "learning_rate": 0.001,
   "l2": 0.001,
   "activation": "relu",
   "class_weight_mode": "sqrt_balanced",
   "batch_size": 512,
-  "max_epochs": 160,
-  "patience": 30,
-  "seed": 5374
+  "max_epochs": 220,
+  "patience": 40,
+  "seed": 5371,
+  "optimizer": "adam",
+  "loss": "cross_entropy",
+  "focal_gamma": 0.0,
+  "mode": "single"
 }
 ```
 
-Best validation epoch: `150`
+Best validation epoch: `45`
+
+Binary calibration selected on validation: temperature `1.00`, bias `-2.00`, validation log loss `0.0330`.
 
 ## Validation Metrics
 
-- Multiclass accuracy: `0.9651`
-- Multiclass macro-F1: `0.6239`
-- Multiclass macro one-vs-rest AUROC: `0.9828`
-- Binary drafted-any F1 at tuned threshold `0.8296`: `0.7024`
-- Binary drafted-any recall at tuned threshold `0.8296`: `0.7579`
-- Binary drafted-any AUROC: `0.9917`
+- Multiclass accuracy: `0.9717`
+- Multiclass macro-F1: `0.6557`
+- Multiclass macro one-vs-rest AUROC: `0.9857`
+- Binary drafted-any F1 at tuned threshold `0.3339`: `0.7876`
+- Binary drafted-any recall at tuned threshold `0.3339`: `0.8000`
+- Binary drafted-any AUROC: `0.9934`
 
 ## Test Metrics
 
-- Multiclass accuracy: `0.9645`
-- Multiclass macro-F1: `0.4830`
-- Multiclass macro one-vs-rest AUROC: `0.9590`
-- Binary drafted-any F1 at validation-tuned threshold `0.8296`: `0.4658`
-- Binary drafted-any precision at validation-tuned threshold `0.8296`: `0.3542`
-- Binary drafted-any recall at validation-tuned threshold `0.8296`: `0.6800`
-- Binary drafted-any AUROC: `0.9635`
+- Multiclass accuracy: `0.9720`
+- Multiclass macro-F1: `0.5272`
+- Multiclass macro one-vs-rest AUROC: `0.9520`
+- Binary drafted-any F1 at validation-tuned threshold `0.3339`: `0.4706`
+- Binary drafted-any precision at validation-tuned threshold `0.3339`: `0.3721`
+- Binary drafted-any recall at validation-tuned threshold `0.3339`: `0.6400`
+- Binary drafted-any AUROC: `0.9551`
 
 ## Rubric Check
 
@@ -54,6 +63,6 @@ Best validation epoch: `150`
 - Inputs/outputs stated: satisfied. Inputs are processed NCAA player statistics; outputs are class probabilities for undrafted, first round, and second round, plus a drafted-any score.
 - Three or more metrics: satisfied. Accuracy, precision, recall, F1, confusion matrices, and AUROC are written to `mlp_results.json`.
 - Train/validation/test procedure: satisfied. The provided time-aware splits are used, validation chooses hyperparameters and threshold, and test is used once for final reporting.
-- Overfitting controls: satisfied. The model uses early stopping, L2 regularization, class-weighted loss, and validation-only model selection.
-- Class imbalance handling: partially satisfied and should be discussed in the report. The loss is class-weighted and metrics emphasize macro-F1/AUROC, but the test drafted class is extremely rare, so precision/recall tradeoffs remain unstable.
+- Overfitting controls: satisfied. The model uses early stopping, L2 regularization, optional train-only feature pruning, and validation-only model selection.
+- Class imbalance handling: satisfied for the MLP. The loss is class-weighted and can use focal loss, model selection emphasizes macro-F1 plus drafted-any F1, the binary calibration/threshold are tuned on validation only, and the report includes precision/recall/F1/AUROC so the rare drafted class tradeoff is visible.
 - Streamlit deployment readiness: mostly satisfied for the MLP piece. The script saves weights and preprocessing metadata; `mlp_inference.py` shows the exact loading and prediction path that can be reused inside Streamlit.
