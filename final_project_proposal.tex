@@ -1,0 +1,251 @@
+%%%%%%
+% HRI 2022 Final Project Report 
+%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%
+% Abstract
+%%%%%%%%%%%%%%%%%%%%
+\begin{abstract}
+
+NBA front offices must decide which college players warrant scarce draft capital despite noisy competition levels, role differences, and limited future information. Our project proposes a public-data machine learning pipeline that predicts whether an NCAA player-season will result in a first-round selection, a second-round selection, or no draft selection. We use the Kaggle "College Basketball 2009-2021 + NBA Advanced Stats" package and focus only on the college-player files from 2009-2021, constructing a three-class draft outcome label from the companion draft file. We compare three methods: logistic regression as an interpretable baseline, K-Nearest Neighbors (KNN) as a similarity-based nonparametric method, and a shallow multilayer perceptron (MLP) as a nonlinear alternative. Model quality will be measured with accuracy, macro-precision, macro-recall, macro-F1, and multiclass AUROC, using time-aware train/validation/test splits to reduce leakage across seasons. We expect logistic regression to provide a strong transparent benchmark, KNN to provide intuitive judgments in comparisons of locally similar players while the MLP may improve recall on borderline prospects by capturing feature interactions. The resulting Streamlit application will allow users to browse historical NCAA player-seasons from the dataset, enter player statistics, compare model predictions, and inspect key feature contributions. This project is significant because it tests how far a reproducible, fully public and from-scratch workflow can go on a practically relevant sports-analytics talent-identification task. 
+
+\end{abstract}
+
+% \begin{IEEEkeywords}
+% component, formatting, style, styling, insert
+% \end{IEEEkeywords}
+
+%%%%%
+% Section 1: Introduction
+%%%%%
+\section{Introduction}
+
+Drafting is a high-stakes selection problem. A missed pick can consume salary-cap resources, roster slots, and developmental attention, while a successful pick can create franchise value for years. At the college level, however, player statistics are shaped by conference strength, team role, pace, and uneven quality of opposition, which makes simple box-score comparisons unreliable.
+Our project asks whether a transparent machine learning pipeline built only from public NCAA player statistics can estimate NBA draft well enough to support first-pass screening. The goal is not to replace scouting, but to create a reproducible decision-support tool that can rank players, quantify uncertainty, and highlight which public signals matter most.
+We address this problem with three from-scratch classifiers: logistic regression, KNN and a shallow MLP. We evaluate them with accuracy, macro-precision, macro-recall, macro-F1, and multiclass AUROC, then deploy the stronger model in a Streamlit interface for basketball analytics students, fans, and entry-level scouting users. The broader impact is methodological as well as practical: the project demonstrates an end-to-end, interpretable, public-data workflow for sports talent evaluation under the course constraints.
+
+
+%%%%%
+% Section 2: Related Work
+%%%%%
+\section{Background}
+
+Prior work suggests that pre-draft information does carry signal, but the target being predicted varies across studies. Berri, Brook, and Fenn \cite{berri2011nba} study how college performance relates to NBA draft order, framing draft selection as a measurable outcome shaped by collegiate production. Moxley and Towne \cite{moxley2015nba} move from draft order to early-career NBA success and report that age, college quality, and college performance help predict stronger NBA trajectories. Kannan et al. \cite{kannan2018nba} likewise show that pre-draft variables such as college statistics can be useful for projecting later NBA outcomes.
+More recent sports-analytics work argues that richer data can improve forecasts. Patton et al. \cite{patton2021nba} predict the probability of a player making the NBA directly from college data and show that proprietary tracking features outperform weaker public proxies such as play-by-play summaries. This line of work is important because it suggests the problem is learnable, but it also highlights a practical divide: stronger talent models often rely on data sources unavailable to students, fans, or small organizations.
+These studies expose several disputes that motivate our design. First, there is no single agreed target: a model can predict draft order, draft status, NBA minutes, longevity, or advanced performance, and each target encodes a different notion of "success." Second, purely subjective scouting is flexible but difficult to reproduce, whereas purely statistical models can miss role context and development environment. Third, richer tracking data may improve performance, but public-data workflows remain more accessible and auditable.
+Our project targets the gap between accessibility and predictive ambition. We choose a three-class label---first-round selection, second-round selection, and undrafted---because these outcomes are observable, relevant to front-office screening, and directly supported by the public draft file in our dataset package. Unlike studies that depend on proprietary tracking feeds or use draft order itself as an input, we restrict features to public college player statistics. This lets us test a focused question: can an interpretable, reproducible public-data pipeline still produce useful estimates of NBA draft outcome category, and how do three modeling approaches---logistic regression, K-nearest neighbors (KNN), and a shallow nonlinear model (MLP)---compare in terms of performance and complexity?
+
+%%%%%
+% Section 3: Method
+%%%%%
+\section{End-to-End ML Pipeline}
+
+\subsection{Offline Model Training and Evaluation}
+
+\subsubsection{Data Collection, Exploration, and Processing}
+
+\paragraph{Dataset Collection}
+We use the Kaggle dataset \textit{College Basketball 2009--2021 + NBA Advanced Stats}, but for this proposal we restrict the scope to the college-player files covering 2009--2021. The package reports statistics for more than 25,000 college players and notes that international players are not recorded. Our main files are expected to be \path{CollegeBasketballPlayers2009-2021.csv} for player-season features and \path{DraftedPlayers2009-2021.xlsx} for draft outcomes.
+
+The unit of analysis is the player-season. Candidate features include player identifiers, school/team, conference, class year, position or role, minutes, scoring, rebounding, assists, shooting percentages, usage-like statistics, and other numerical season aggregates. Ground-truth labels are provided indirectly through the draft file; we will join the files and define a three-class outcome as $y \in \{0,1,2\}$, where $y = 0$ means undrafted, $y = 1$ means the player was drafted in the second round, and $y = 2$ means the player was drafted in the first round. For players with multi-season college careers, we assign the draft label only to the final pre-draft college season; earlier seasons for the same player are labeled as undrafted in this project setting.
+
+\paragraph{Dataset Summary}
+Table~\ref{tab:dataset_summary} summarizes the planned dataset used in this project.
+
+\begin{table}[h]
+\caption{Planned Dataset Summary}
+\label{tab:dataset_summary}
+\centering
+\begin{tabularx}{\columnwidth}{|l|X|}
+\hline
+\textbf{Item} & \textbf{Planned Description} \\
+\hline
+Time span & 2009--2021 college seasons \\
+\hline
+Unit of analysis & Player-season \\
+\hline
+Approx.\ size & More than 25,000 players; total rows depend on multi-season careers \\
+\hline
+Data types & Categorical and numerical tabular data \\
+\hline
+Target label & Draft outcome (3 classes: first round, second round, undrafted), built from DraftedPlayers2009-2021.xlsx \\
+\hline
+Source & Kaggle public dataset package \\
+\hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Data Exploration and Preprocessing}
+Planned EDA includes histograms of key numeric features, boxplots by position, drafted-outcome distributions by conference and class year, scatterplots such as usage versus efficiency colored by draft status, and a numerical correlation heatmap. These displays will help us detect skew, role effects, redundancy, and class imbalance, and they will also appear in the Streamlit application as an exploratory tab.
+
+Preprocessing will include schema cleanup, season-level missingness audits, median imputation for numerical features, an \texttt{Unknown} bucket for categorical missing values, one-hot encoding for selected categoricals, z-score scaling for numerical inputs, and optional winsorization for highly skewed fields. We will cap very high-cardinality variables such as school with a top-$K$ strategy plus an \texttt{Other} bucket if needed. We will also run leakage checks to ensure draft outcomes, post-draft information, or duplicated identifiers are not inadvertently used as predictors.
+
+\subsubsection{Methods and Model Training}
+
+We formulate the task as multiclass classification. Let $x \in \mathbb{R}^d$ denote the feature vector for one player-season and let $y \in \{0,1,2\}$ indicate whether the player-season is undrafted, selected in the second round, or selected in the first round. Inputs are the processed tabular features described above, and outputs are (i) a predicted probability vector over the three classes and (ii) a predicted class label corresponding to Undrafted, Second Round, or First Round.
+
+\paragraph{Logistic Regression}
+Logistic regression provides an interpretable baseline for probabilistic classification. We model the class probability for each outcome class $c \in \{0,1,2\}$ as
+\[
+p(y=c \mid x) = \frac{\exp(w_c^\top x + b_c)}{\sum_{j=0}^{2}\exp(w_j^\top x + b_j)}.
+\]
+Parameters are learned by minimizing the regularized multiclass cross-entropy loss:
+\[
+L(W,b) = -\sum_i \sum_{c=0}^{2} \mathbf{1}[y_i = c]\log p(y_i = c \mid x_i) + \lambda \lVert W \rVert_2^2.
+\]
+
+We will implement mini-batch gradient descent with learning-rate tuning and $L_2$ regularization. This model is well-suited because it produces probabilities over all three draft outcome classes, exposes class-specific coefficient patterns, and sets a strong transparent benchmark under the course's from-scratch constraint.
+
+\paragraph{Shallow Multilayer Perceptron}
+To capture nonlinear interactions that linear models may miss, we will implement a shallow MLP with one hidden layer:
+\[
+h = \phi(W_1 x + b_1), \qquad z = W_2 h + b_2, \qquad \hat{p} = \text{softmax}(z).
+\]
+The network will be trained with multiclass cross-entropy and backpropagation. Candidate activations include ReLU or \texttt{tanh}; hidden size, regularization, and optional dropout will be tuned on the validation split.
+
+The MLP is appropriate because draft may depend on interactions such as role $\times$ efficiency, conference $\times$ usage, or class year $\times$ production. Its purpose is not to maximize depth, but to test whether limited nonlinear capacity yields meaningful gains over logistic regression while remaining manageable for a student implementation.
+
+\paragraph{K-Nearest Neighbors}
+K-nearest neighbors (KNN) is a non-parametric method that classifies a player based on similarity to historical examples. For a query vector $x$, we compute distances to training samples using a metric such as Euclidean distance and select the $k$ nearest neighbors. For multiclass prediction, we compute the class proportion among these neighbors. The predicted probability for class $c \in \{0,1,2\}$ is
+\[
+p(y=c \mid x) = \frac{1}{k} \sum_{i \in N_k(x)} \mathbf{1}[y_i = c],
+\]
+and the predicted class is
+\[
+\hat{y} = \arg\max_c p(y=c \mid x).
+\]
+
+We will implement distance computation, neighbor selection, and tune $k$ on the validation set, with feature normalization to ensure fair comparisons across statistics. KNN is suitable because players with similar statistical profiles may share similar draft outcomes, allowing the model to capture local structure without assuming a global functional form.
+
+\subsubsection{Experimental Design and Evaluation}
+
+We will prioritize time-aware splits to reduce season leakage. A default plan is to train on earlier seasons (for example, 2009--2018), validate on a mid-late season, and test on the most recent seasons in the dataset. As a sensitivity check, we will also report stratified random splits. Hyperparameters will be selected only on the validation set.
+
+Because the three classes are likely imbalanced---especially first-round selections---we will report both threshold-based and threshold-free multiclass metrics. Accuracy is defined as
+\[
+\text{Accuracy} = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\hat{y}_i = y_i],
+\]
+where $N$ is the number of player-seasons, $y_i$ is the true class label, and $\hat{y}_i$ is the predicted class label.
+
+For each class $c \in \{0,1,2\}$, we compute one-vs-rest precision, recall, and F1 as
+\[
+\text{Precision}_c = \frac{TP_c}{TP_c + FP_c},
+\qquad
+\text{Recall}_c = \frac{TP_c}{TP_c + FN_c},
+\]
+and
+\[
+F1_c = \frac{2(\text{Precision}_c \times \text{Recall}_c)}{\text{Precision}_c + \text{Recall}_c}.
+\]
+We then report macro-averaged metrics across the three classes:
+\begin{align*}
+\text{Macro-Precision} &= \frac{1}{3}\sum_{c=0}^{2}\text{Precision}_c \\
+\text{Macro-Recall} &= \frac{1}{3}\sum_{c=0}^{2}\text{Recall}_c \\
+\text{Macro-F1} &= \frac{1}{3}\sum_{c=0}^{2}F1_c
+\end{align*}
+
+We will compute multiclass AUROC using a one-vs-rest formulation and report the macro-average across the three classes. We will also use a confusion matrix to inspect which draft outcome classes are most frequently confused. We will use Macro-F1 and multiclass AUROC as the primary model selection criteria, with calibration and interpretability as secondary criteria.
+
+To avoid overfitting, we will use early stopping, $L_2$ regularization, model-capacity control, and ablation checks on unstable features. To diagnose underfitting, we will inspect training-versus-validation curves and error distributions. We also plan error analysis on class confusions to understand whether certain conferences, positions, or player archetypes are systematically misclassified.
+
+\subsubsection{Model Deployment}
+
+The final model deployed in the Streamlit application is chosen based on the performance of logistic regression, KNN, and shallow MLP on the validation set. Because the three classes are likely imbalanced---especially the first-round class---we prioritize multiclass AUROC and macro-F1 over accuracy, as these metrics better reflect performance across all three classes.
+If different models exhibit trade-offs across different metrics, we make trade-offs based on application requirements. For example, suppose one model has the highest multiclass AUROC, but another has the highest macro-F1. We first evaluate the performance gap and then see if it justifies the additional model complexity. If the overall performance is similar, we prioritize the simpler model, as simpler models are generally easier to deploy and interpret. If the more complex model has a significant advantage in multiclass AUROC and macro-F1, we deploy that model.
+
+
+\subsection{Streamlit Application (Deployment Plan)}
+
+The target users are basketball analytics students, fans, and entry-level scouting analysts who want a quick, reproducible estimate of draft outcome category from public statistics. Figure~\ref{fig:Proposal_screenshot} shows Draft Projection page of our proposed Streamlit application. The sidebar is used for navigation across the main sections of the app, including the Introduction, Data Overview, Draft Projection, What-if Simulator, and Model Evaluation pages, while the central panel contains the core prediction workflow. On this page, users can search for an NCAA player, select the correct prospect from the filtered results, choose the season and position, and then click the \textit{Run Prediction} button. After the button is pressed, the selected player’s NCAA statistics are sent to the backend preprocessing pipeline and then passed into our three classification models---Logistic Regression, KNN, and a shallow MLP---to generate a draft prediction. The interface then displays the selected prospect’s profile, the final projected outcome (1st Round, 2nd Round, or Undrafted), the prediction confidence, model agreement, a draft probability chart, and a key stat profile visualization. This layout is designed to keep the application intuitive and visually clear while also helping users understand the reasoning behind the model’s output.
+
+On the back end, the Streamlit app will load saved parameters for the selected trained model, apply the same preprocessing pipeline used offline, and run forward inference to produce class probabilities over the three draft outcomes. Final deployment will use frozen trained weights rather than on-app retraining, which improves reproducibility and keeps inference latency low.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Proposal screenshot.png}
+    \caption{Screenshot of the Draft Projection page in our proposed Streamlit application.}
+    \label{fig:Proposal_screenshot}
+\end{figure}
+
+
+\section{Risk \& Mitigation}
+
+The main technical risks are data quality, class imbalance, leakage, and implementation correctness. Table~\ref{tab:risks} summarizes the most important risks and how we plan to manage them.
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Risks and Mitigation Strategies}
+\label{tab:risks}
+\begin{tabularx}{\textwidth}{|l|X|X|}
+\hline
+\textbf{Risk} & \textbf{Why it matters} & \textbf{Mitigation} \\
+\hline
+
+Class imbalance 
+& A model can appear accurate while poorly identifying rarer classes such as first-round and second-round selections. 
+& Use multiclass AUROC, macro-F1, confusion matrices, and per-class tradeoff analysis rather than relying on accuracy alone. \\
+\hline
+
+Missing or inconsistent fields across seasons 
+& Broken joins or biased imputations can distort learning. 
+& Run season-wise audits, conservative imputations, schema cleanup, and explicit row-count checks after merges. \\
+\hline
+
+Leakage from future outcomes or duplicate identifiers 
+& Leakage would inflate performance and invalidate conclusions. 
+& Use time-aware splits, strict feature whitelists, and duplicate checks before training. \\
+\hline
+
+High-cardinality categoricals 
+& Large one-hot matrices can increase variance and training cost. 
+& Group rare categories, use top-K encoding, and compare with simplified ablations. \\
+\hline
+
+From-scratch implementation bugs 
+& Incorrect gradients or preprocessing would undermine results. 
+& Unit-test functions, run gradient checks on small synthetic examples, and keep deterministic seeds for reproducibility. \\
+\hline
+
+\end{tabularx}
+\end{table*}
+
+\section{Expected Outcomes }
+
+First, we expect logistic regression to deliver a strong and interpretable baseline, especially on AUROC, because many draft-related signals in public data are likely monotonic and additive.
+Second, we expect KNN to perform well for mid-tier or borderline prospects by leveraging local similarity among players with comparable statistical profiles.
+Third, we expect the shallow MLP to improve recall or F1 for borderline prospects by learning limited nonlinear interactions, though the gain may be modest relative to the loss in interpretability.
+Finally, we expect conference, class year, minutes, efficiency, and shooting-related features to remain important, but we also expect residual errors caused by factors not present in public box-score data, such as athletic testing, medical information, and detailed tracking context.
+
+
+\section{Team Member Contribution}
+
+Each member contributes to both the technical work and the writing. Responsibilities are divided below.
+
+\subsection{Technical Contributions}
+
+\textbf{Xinda Ding:} Evaluation framework, metric computation, reproducibility checks, and experiment logging.
+
+\textbf{Pin-Hsuan Lai:} Data ingestion, preprocessing pipeline, and Streamlit front-end development and integration.
+
+\textbf{Pin-Yeh Lai:} MLP implementation, training loop, and hyperparameter tuning.
+
+\textbf{Je-Wei Tsao:} Exploratory data analysis, class imbalance handling, and error analysis.
+
+\textbf{Yui To Wong:} Logistic regression implementation; model comparison and final model selection.
+
+\textbf{Changyi Zhou:} KNN implementation, distance computation, and validation experiments.
+
+\subsection{Writing Contributions}
+
+\textbf{Xinda Ding:} Evaluation metrics, Team Contributions, deployment section, and references.
+
+\textbf{Pin-Hsuan Lai:} Data section, preprocessing details and front-end description.
+
+\textbf{Pin-Yeh Lai:} Methods (MLP) and part of Evaluation, Model Deployment.
+
+\textbf{Je-Wei Tsao:} Background support, Expected Outcomes, EDA  and part of Evaluation.
+
+\textbf{Yui To Wong:} Abstract, Introduction, logistic regression subsection, final revision and report integration.
+
+\textbf{Changyi Zhou:} Methods (KNN) and part of Evaluation and Risks.
